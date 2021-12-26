@@ -7,14 +7,33 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v2
+    - name: Cache build
+      id: cache-build
+      uses: actions/cache@v2
+      with:
+        path: ~/
+        key: tests-${{ runner.os }}-${{ github.sha }}
+        restore-keys: tests-${{ runner.os }}
+    - name: Force git update
+      if: steps.cache-build.outputs.cache-hit == 'true'
+      run: git fetch; git reset --hard FETCH_HEAD
     - name: Install the Google test suite
+      if: steps.cache-build.outputs.cache-hit != 'true'
       env:
         MAKEFLAGS: "-j 2"
       run: (cd test; make install-googletest)
-    - name: Build and run the tools unit tests
+    - name: Build the tools unit tests
       env:
         MAKEFLAGS: "-j 2"
-      run: (cd tools; make all; make run_tests)
+      run: (cd tools; make all)
+    - name: Run the tools unit tests
+      env:
+        MAKEFLAGS: "-j 2"
+      run: (cd tools; make run_tests)
+    - name: Build basic test dependencies (use in cache)
+      env:
+        MAKEFLAGS: "-j 2"
+      run: (cd test; make IRac_test)
 
   Gen_Test_Matrix:
     outputs:
@@ -34,20 +53,25 @@ jobs:
         echo $JSONI
         # Set output
         echo "::set-output name=matrix::[${JSONI}]"
+    - name: Install the Google test suite
+      env:
+        MAKEFLAGS: "-j 2"
+      run: (cd test; make install-googletest)
 
   Unit_Test:
-    needs: Gen_Test_Matrix
+    needs: [Unit_Tests_Tools, Gen_Test_Matrix]
     runs-on: ubuntu-latest
     strategy:
       matrix:
         test: ${{fromJson(needs.Gen_Test_Matrix.outputs.matrix)}}
 
     steps:
-    - uses: actions/checkout@v2
-    - name: Install the Google test suite
-      env:
-        MAKEFLAGS: "-j 2"
-      run: (cd test; make install-googletest)
+    - name: Cache build and checkout
+      uses: actions/cache@v2
+      with:
+        path: ~/
+        key: tests-${{ runner.os }}-${{ github.sha }}
+        restore-keys: tests-${{ runner.os }}
     - name: Build and run unit test ${{ matrix.test }}
       env:
         MAKEFLAGS: "-j 2"
